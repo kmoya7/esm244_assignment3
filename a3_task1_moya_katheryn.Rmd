@@ -1,0 +1,80 @@
+---
+title: 'Task 1: Principal component''s analysis'
+author: "Katheryn Moya"
+date: "2/26/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(here)
+
+# For PCA
+
+library(ggfortify) # for biplot
+library(patchwork)
+```
+
+
+
+```{r}
+# read in data of choice
+
+moose <- read_csv(here("data", "hf115-01-plot.csv")) %>% 
+  select(browse.index, elev, tall.shrubs, dist.h2o, dist.conifer, harvest.intensity, dist.dev) %>% 
+  drop_na()
+
+# want to retain variables that influence moose foraging: elevation, distance to water, distance to conifers, harvest intensity, distance to development
+
+glimpse(moose)
+
+```
+
+PCA requires continuous numeric data with no NAs.  So we must drop categorical and character data, and exclude any rows with NAs.  We should also rescale so all numeric variables have a mean 0 and sd 1
+
+```{r}
+moose_pca <- moose %>% 
+  dplyr::select(where(is.numeric)) %>% 
+  scale() %>% 
+  prcomp()
+```
+
+```{r}
+# see the loadings (weighting for each principal component)
+
+moose_pca$rotation
+```
+
+# Biplot loadings by hand
+
+```{r}
+loadings_df <- data.frame(moose_pca$rotation * 8) %>% 
+  mutate(axis = row.names(.))
+
+new_pts_df <- data.frame(moose_pca$x)
+
+ggplot() +
+  geom_point(data = new_pts_df, aes(x = PC1, y = PC2)) +
+  geom_segment(data = loadings_df, 
+               x = 0, y = 0, aes(xend = PC1, yend = PC2, group = axis),
+               arrow = arrow(length = unit(.25, "cm"))) +
+  geom_text(data = loadings_df,
+            aes(x = PC1, y = PC2, label = axis), vjust = 0, nudge_y = .01) +
+  theme_minimal()
+```
+```{r}
+autoplot(moose_pca,
+     	data = moose,
+     	loadings = TRUE,
+     	loadings.label = TRUE,
+     	loadings.colour = "black",
+     	loadings.label.colour = "black",
+     	loadings.label.vjust = -0.5
+     	) +
+  scale_color_manual(values = c('red', 'orange', 'yellowgreen', 'darkgreen')) +
+  scale_fill_manual(values = c('red', 'orange', 'yellowgreen', 'darkgreen')) +
+  theme_minimal()
+```
+
