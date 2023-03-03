@@ -1,0 +1,122 @@
+---
+title: "Task 2: Hierarchical Clustering"
+author: "Katheryn Moya"
+date: "2/28/2023"
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    theme: cosmo
+    code_folding: hide
+    collapsed: yes
+---
+## Overview:
+
+This analysis conducts a multivariate clustering for water chemistry for each site in the Santa Barbara Coastal drainage area using data provided by the Santa Barbara Coastal Long-term Ecological Research station. Water samples across each of the 13 sites are collected weekly during non-storm flows in the winter and biweekly during the summer, variables measured include dissolved nitrogen, soluble reactive phosphorus , particulate organic carbon, nitrogen, and phosphorus, total suspended sediments, and conductivity.
+Hierarchical clustering was selected for this clustering analysis given the small sample size. 
+
+**Data citation:** Santa Barbara Coastal LTER and J. Melack. 2019. SBC LTER: Land: Stream chemistry in the Santa Barbara Coastal drainage area, ongoing since 2000 ver 16. Environmental Data Initiative. https://doi.org/10.6073/pasta/67a558a24ceed9a0a5bf5e46ab841174. 
+
+## Data Wrangling
+
+```{r setup, echo = TRUE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = TRUE)
+
+library(tidyverse)
+library(here)
+library(janitor)
+
+## packages for cluster analysis, extend our options for visualizations, etc
+
+library(NbClust)
+library(cluster)
+library(factoextra) #for visualizing dendrograms
+library(dendextend) 
+library(ggdendro)
+library(paletteer)
+```
+
+In order to compare water chemistry observations across the drainage area, we must first create a data frame that has a single summary row per site based on means from all observations at that site. This involves using the `group_by()` and `summarize` function. Because NA values must be removed in order to re-scale the data, the following variables were excluded from the analysis to prevent dropping site observations: Total Particulate Carbon in micro-moles per liter	(tpc_uM), Total Particulate Nitrogen in micro-moles per liter (tpn_uM), total particulate phosphorous micro-moles per liter	(tpp_uM), total suspended solids in milligrams per liter (tss_mg_per_L), and specific conductivity in micro-Siemens per centimeters	(spec_cond_uS/cm). 
+
+```{r}
+# SB stream chemistry data: read in and simplify
+#  want to show multivariate clustering for water chemistry by site
+#  need to summarize different sites since they are repeated for different days of monitoring
+
+sb_streams <- read_csv(here("data", "sbc_lter_registered_stream_chemistry.csv")) %>% 
+  select(site_code:tdp_uM) %>%  # getting rid of variables that are predominantly -999 (aka NA's) 
+#   # need to summarize to group by site (to include mean values for each site) 
+  group_by(site_code) %>%
+ summarize(avg_nh4_uM = mean(nh4_uM),
+           avg_no3_uM = mean(no3_uM),
+           avg_po4_uM = mean(po4_uM),
+           avg_tdn_uM = mean(tdn_uM),
+           avg_tdp_uM = mean(tdp_uM)) %>%
+  # convert NAs
+  na_if(-999)
+  
+```
+
+The data was then re-scaled so that each column has a mean of 0 and a standard deviation of 1.
+
+```{r}
+## Create a complete, scaled version of the data 
+streams_complete <- sb_streams %>% 
+  drop_na(avg_nh4_uM:avg_tdp_uM) 
+# we're only interested in the NA values in the numeric columns because we want to re-scale it and that is purely based on numeric values
+
+streams_scaled <- streams_complete %>% 
+  select(starts_with('avg_')) %>%  
+  scale() 
+# creating a matrix where all of the values in each column have a mean of 0 and re-centering them with a SD of 1 to get all of them on the same level playing field
+
+rownames(streams_scaled) <- sb_streams$site_code 
+#assigning rownames based on ones in previous dataset, not a variable, because we can't have categorical variables, will just help us identify the data points (useful for viz)
+```
+
+## Hierarchical clustering
+
+For hierarchical clustering we must first compute a complete linkage, where we compute the pairwise distances between the 13 observations and then use the maximum pairwise distance as the distance between two clusters. 
+
+```{r}
+# Start with complete linkage
+
+streams_dist <- dist(streams_scaled, method = "euclidean") 
+
+# we will get a matrix of the distances between data points, going to look at which ones are the closest to each other
+
+streams_hc_complete <- hclust(streams_dist, method = "complete")
+
+streams_hc_data <- dendro_data(streams_hc_complete, type = "rectangle")
+```
+
+We will then visualize this top-down clustering in a dendrogram, where all observations initially start as a single cluster and are them progressively split up based on similarity/dissimilarity.
+
+```{r}
+# plotting a dendrogram
+
+# plot(streams_hc_complete, cex = 0.6, hang = -1)
+
+#customize visualization using ggplot and factoextra
+
+# require("ggsci")
+# show_col(pal_nejm(palette = c("default"))(10))
+# show_col(pal_nejm("default", alpha = 0.6)(10))
+
+fviz_dend(x = streams_hc_complete, cex = 0.7, lwd = 0.7, k = 6,
+          k_colors = ("nejm"),
+          rect = TRUE, 
+          rect_border = "nejm", 
+          rect_fill = TRUE) +
+  labs(x = "Site Code",
+       y = "Height",
+       title = "Dendrogram for SB Streams",
+       caption = "Hierarchical cluster analysis (HCA) for 13 stream 
+       chemistry monitoring sites in Santa Barbara County, CA.") 
+```
+
+Brief Summary:
+
+ - Although these stream sites are all within the same watershed, there is a great variation in the water chemistry, resulting in 6 clusters
+ - The largest cluster shows us that sites AB00, MC00, RG01, GVO1, and RS02 are the most similar to each other
+ 
